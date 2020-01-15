@@ -1,0 +1,94 @@
+Index: artifactory/cli.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- artifactory/cli.go	(date 1578824172000)
++++ artifactory/cli.go	(date 1578845491191)
+@@ -2527,10 +2527,10 @@
+ 	if err != nil {
+ 		return err
+ 	}
+-	buildScanCmd := buildinfo.NewBuildScanCommand().SetRtDetails(rtDetails).SetFailBuild(c.BoolT("fail")).SetBuildConfiguration(buildConfiguration)
++	 buildScanCmd := buildinfo.NewBuildScanCommand().SetRtDetails(rtDetails).SetFailBuild(c.BoolT("fail")).SetBuildConfiguration(buildConfiguration)
+ 	err = commands.Exec(buildScanCmd)
+-
+-	return cliutils.ExitBuildScan(buildScanCmd.BuildFailed(), err)
++	return err
++	//return cliutils.ExitBuildScanNotConfigured(buildScanCmd.BuildFailed(), err)
+ }
+ 
+ func buildCleanCmd(c *cli.Context) error {
+Index: utils/cliutils/utils.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- utils/cliutils/utils.go	(date 1578824172000)
++++ utils/cliutils/utils.go	(date 1578845491201)
+@@ -49,7 +49,9 @@
+ var ExitCodeNoError = ExitCode{0}
+ var ExitCodeError = ExitCode{1}
+ var ExitCodeFailNoOp = ExitCode{2}
+-var ExitCodeBuildScan = ExitCode{3}
++var ExitCodeBuildScanNotConfigured = ExitCode{3}
++var ExitCodeBuildScanWithAlerts = ExitCode{4}
++
+ 
+ type CliError struct {
+ 	ExitCode
+@@ -93,14 +95,20 @@
+ 	}
+ }
+ 
+-func ExitBuildScan(failBuild bool, err error) error {
+-	if failBuild && err != nil {
+-		return CliError{ExitCodeBuildScan, "Build Scan Failed"}
++func ExitBuildScanNotConfigured(failBuild bool, err string) error {
++	if failBuild && len(err) > 0 {
++		return CliError{ExitCodeBuildScanNotConfigured, err}
+ 	}
++
++	return nil
++}
+ 
+-	return nil
++func ExitBuildScanWithAlerts(failBuild bool, err string) error {
++	if failBuild && len(err) > 0 {
++		return CliError{ExitCodeBuildScanWithAlerts, err}
++		}
++		return nil
+ }
+-
+ func GetExitCode(err error, success, failed int, failNoOp bool) ExitCode {
+ 	// Error occurred - Return 1
+ 	if err != nil || failed > 0 {
+Index: artifactory/commands/buildinfo/xrayscan.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- artifactory/commands/buildinfo/xrayscan.go	(date 1578824172000)
++++ artifactory/commands/buildinfo/xrayscan.go	(date 1578845491136)
+@@ -2,8 +2,8 @@
+ 
+ import (
+ 	"encoding/json"
+-	"errors"
+ 	"github.com/jfrog/jfrog-cli-go/artifactory/utils"
++	"github.com/jfrog/jfrog-cli-go/utils/cliutils"
+ 	"github.com/jfrog/jfrog-cli-go/utils/config"
+ 	"github.com/jfrog/jfrog-client-go/artifactory/services"
+ 	clientutils "github.com/jfrog/jfrog-client-go/utils"
+@@ -74,7 +74,10 @@
+ 	// Check if should fail build
+ 	if bsc.failBuild && scanResults.Summary.FailBuild {
+ 		bsc.buildFailed = true
+-		return errorutils.CheckError(errors.New(scanResults.Summary.Message))
++		if scanResults.Summary.TotalAlerts >= 1 {
++			return cliutils.ExitBuildScanWithAlerts(bsc.failBuild , scanResults.Summary.Message)
++		}
++		return cliutils.ExitBuildScanNotConfigured(bsc.failBuild , scanResults.Summary.Message)
+ 	}
+ 
+ 	return err
